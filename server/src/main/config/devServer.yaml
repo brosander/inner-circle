@@ -1,0 +1,52 @@
+---
+description: Local server configuration for development and testing.  PLEASE DON'T use this configuration for PRODUCTION.
+environment:
+  - name: SESSION_HASH_KEY
+    description: Key to use when generating HMAC hash for session cookie.
+  - name: POSTGRES_HOSTNAME
+    description: Postgres hostname.
+    default: localhost
+  - name: POSTGRES_PORT
+    description: Postgres port.
+    default: 5432
+  - name: POSTGRES_DB
+    description: Postgres database.
+    default: innercircle
+  - name: POSTGRES_USER
+    description: Postgres username.
+    default: innercircle
+  - name: POSTGRES_PASSWORD
+    description: Postgres password.
+arguments:
+  - short: b
+    long: baseUrl
+    description: Base URL for the application.  All redirects are resolved relative to this.
+    default: http://localhost:8080
+  - short: s
+    long: staticAssetDir
+    description: Directory to serve static assets from.
+    default: ./static
+  - short: f
+    long: localFilesDir
+    description: Directory to serve files (images and videos) from.
+    default: ./assets
+---
+modules:
+  - class: com.github.brosander.innercircle.services.ServiceContextModule
+    baseUrl: ${args.baseUrl}
+  - class: com.github.brosander.innercircle.entrypoints.InnerCircleServerModule
+    traceRouting: true
+  - class: com.github.brosander.innercircle.services.ApiV1Module
+  - class: com.github.brosander.innercircle.services.ClientModule
+    staticFolder: ${args.staticAssetDir}
+  - class: com.github.brosander.innercircle.services.files.LocalFilesModule
+    baseDir: ${args.localFilesDir}
+  - class: com.github.brosander.innercircle.services.security.session.CookieSessionModule
+    sessionHashKey: ${env.SESSION_HASH_KEY}
+  - class: com.github.brosander.innercircle.model.connection.PostgresConnectionFactoryModule
+    hostname: ${env.POSTGRES_HOSTNAME}
+    port: ${env.POSTGRES_PORT}
+    db: ${env.POSTGRES_DB}
+    user: ${env.POSTGRES_USER}
+    password: ${env.POSTGRES_PASSWORD}
+  - class: com.github.brosander.innercircle.services.security.authentication.DevOnlyTrustingAuthenticationProviderModule

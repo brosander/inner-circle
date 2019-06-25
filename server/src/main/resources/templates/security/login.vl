@@ -1,0 +1,12 @@
+<html>
+<body>
+#if( ${providers.empty} )
+  No providers configured.  Please configure one and try again.
+#else
+  <ul>
+#foreach( $provider in $providers )
+    <li><a href="${provider.Path}">${provider.Name}</a></li>
+#end
+  </ul>
+#end
+</html>

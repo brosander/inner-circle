@@ -1,0 +1,13 @@
+<html>
+<body>
+DEV ONLY DEV ONLY!!!! DON'T USE IN PROD!!!!
+#if( $users.Empty )
+  No users found.  Please load data and try again.
+#else
+  <ul>
+#foreach( $user in $users )
+    <li><a href="$path/$user.Id">${user.Name}#if( $user.Email) ($user.Email)#end</a></li>
+#end
+  </ul>
+#end
+</html>

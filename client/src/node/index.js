@@ -15,7 +15,7 @@ var loadPosts = function() {
     fetch(requestUrl, { credentials: "same-origin" })
       .then(function(response) {
         if (response.status == 401) {
-          window.location.replace("/login/google")
+          window.location.replace("/login")
         }
         loading = false;
         if (response.ok) {
