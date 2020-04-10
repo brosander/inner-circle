@@ -2,12 +2,14 @@ package com.github.brosander.innercircle.entrypoints
 
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.github.brosander.innercircle.config.LocalAssetResolver
 import com.github.brosander.innercircle.model.connection.ConnectionFactory
-import com.github.brosander.innercircle.model.connection.PostgresConnectionFactory
 import com.google.inject.AbstractModule
-import com.google.inject.Provides
+import com.google.inject.multibindings.ProvidesIntoSet
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.sql.Date
+import java.sql.Types
 import java.text.SimpleDateFormat
 import java.util.Comparator
 import java.util.stream.Collectors
@@ -25,12 +27,19 @@ data class Post(
         val shared_with: List<SharedWithUser>
 )
 
-data class User(val image: String, val name: String)
+data class User(val image: String?, val name: String, val email: String?)
 data class PostsFile(val posts: Map<String, Post>, val users: Map<String, User>)
 
-class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile: File, val scraperEmail: String, val scraperName: String) : InnerCircleEntrypoint {
+class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile: File, val scraperName: String?) : InnerCircleEntrypoint {
+    companion object {
+        val logger = LoggerFactory.getLogger(InnerCircleDataLoad::class.java)
+    }
+
     override fun run() {
+        logger.info("Beginning dataload.")
         connectionFactory.getConnection().use { connection ->
+            logger.info("Dropping existing tables.")
+
             connection.prepareStatement("drop table if exists comment").use { it.execute() }
             connection.prepareStatement("drop table if exists post_share").use { it.execute() }
             connection.prepareStatement("drop table if exists post_image").use { it.execute() }
@@ -42,6 +51,7 @@ class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile
             connection.prepareStatement("drop table if exists image").use { it.execute() }
             connection.prepareStatement("drop table if exists video").use { it.execute() }
 
+            logger.info("Creating tables.")
             connection.prepareStatement(
                     """
             CREATE TABLE IF NOT EXISTS image (
@@ -136,19 +146,18 @@ class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile
             )"""
             ).use { it.execute() }
 
+            logger.info("Parsing posts file: $jsonFile")
             val posts: PostsFile = jacksonObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
                     .readValue(jsonFile, PostsFile::class.java)
-
-
-            connection.prepareStatement("")
 
             val usersSorted = posts.users.entries.stream()
                     .sorted(Comparator.comparing { e: Map.Entry<String, User> -> e.value.name }.thenComparing { e: Map.Entry<String, User> -> e.key })
                     .collect(Collectors.toList())
 
+            logger.info("Inserting user images.")
             val userImageIds: HashMap<String, Long> = HashMap()
             connection.prepareStatement("INSERT INTO image(location, source) VALUES (?, ?) RETURNING id").use {
-                for (user in usersSorted) {
+                for (user in usersSorted.filter { it.value.image != null }) {
                     it.setString(1, user.value.image)
                     it.setString(2, user.key)
 
@@ -158,13 +167,21 @@ class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile
                     }
                 }
             }
+
+            logger.info("Inserting users.")
             val userIds: HashMap<String, Int> = HashMap()
-            connection.prepareStatement("INSERT INTO circle_user(name, image_id, source) VALUES (?, ?, ?) RETURNING id")
+            connection.prepareStatement("INSERT INTO circle_user(name, image_id, source, email) VALUES (?, ?, ?, ?) RETURNING id")
                     .use {
                         for (entry in usersSorted) {
                             it.setString(1, entry.value.name)
-                            it.setLong(2, userImageIds[entry.key]!!)
+                            val imgId = userImageIds[entry.key]
+                            if (imgId == null) {
+                                it.setNull(2, Types.BIGINT)
+                            } else {
+                                it.setLong(2, imgId)
+                            }
                             it.setString(3, entry.key)
+                            it.setString(4, entry.value.email)
 
                             it.executeQuery().use { rs ->
                                 rs.next()
@@ -173,13 +190,12 @@ class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile
                         }
                     }
 
-            connection.prepareStatement("UPDATE circle_user SET email = '$scraperEmail' WHERE name = '$scraperName'").use { it.execute() }
-
             val sdf = SimpleDateFormat("MMM dd, yyyy")
             val postSortedList = posts.posts.entries.stream().sequential()
                     .sorted(Comparator.comparing { e: Map.Entry<String, Post> -> sdf.parse(e.value.date) })
                     .collect(Collectors.toList())
 
+            logger.info("Inserting posts.")
             val postIds: HashMap<String, Long> = HashMap()
             for (entry in postSortedList) {
                 connection.prepareStatement("INSERT INTO post(created_date, user_id, post_text) VALUES (?, ?, ?) RETURNING id")
@@ -195,6 +211,7 @@ class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile
                         }
             }
 
+            logger.info("Inserting comments.")
             for (entry in postSortedList) {
                 connection.prepareStatement("INSERT INTO comment(post_id, user_id, comment_text) VALUES (?, ?, ?)")
                         .use { stmt ->
@@ -208,6 +225,7 @@ class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile
                         }
             }
 
+            logger.info("Inserting post assets.")
             val imageIds: HashMap<String, Long> = HashMap()
             connection.prepareStatement("INSERT INTO image(location, source) VALUES (?, ?) RETURNING id").use {
                 for (post in postSortedList) {
@@ -258,6 +276,7 @@ class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile
                 }
             }
 
+            logger.info("Creating circles.")
             val circles: HashMap<Int, HashMap<Set<String>, Int>> = HashMap()
             connection.prepareStatement("INSERT INTO circle(owner_id, name) VALUES (?, ?) RETURNING id").use { stmt ->
                 for (entry in postSortedList) {
@@ -291,27 +310,29 @@ class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile
                 }
             }
 
-            val scraperId = connection.prepareStatement("SELECT id FROM circle_user WHERE name = '$scraperName'").use { it.executeQuery().use { it.next(); it.getInt(1) } }
+            if (scraperName != null) {
+                val scraperId = connection.prepareStatement("SELECT id FROM circle_user WHERE name = '$scraperName'").use { it.executeQuery().use { it.next(); it.getInt(1) } }
 
-            // Would've been shared with scraper or wouldn't have seen while scraping, user doesn't show in G+ list of shared_with
-            val circleIds: List<Int> = connection.prepareStatement("SELECT id FROM circle WHERE owner_id != ?").use { stmt ->
-                stmt.setInt(1, scraperId)
+                // Would've been shared with scraper or wouldn't have seen while scraping, user doesn't show in G+ list of shared_with
+                val circleIds: List<Int> = connection.prepareStatement("SELECT id FROM circle WHERE owner_id != ?").use { stmt ->
+                    stmt.setInt(1, scraperId)
 
-                stmt.executeQuery().use { rs ->
-                    val circleIds = ArrayList<Int>()
-                    while (rs.next()) {
-                        circleIds.add(rs.getInt(1))
+                    stmt.executeQuery().use { rs ->
+                        val circleIds = ArrayList<Int>()
+                        while (rs.next()) {
+                            circleIds.add(rs.getInt(1))
+                        }
+                        circleIds
                     }
-                    circleIds
                 }
-            }
 
-            connection.prepareStatement("INSERT INTO circle_member(circle_id, user_id) VALUES (?, ?)").use { stmt ->
-                for (circleId in circleIds) {
-                    stmt.setInt(1, circleId)
-                    stmt.setInt(2, scraperId)
+                connection.prepareStatement("INSERT INTO circle_member(circle_id, user_id) VALUES (?, ?)").use { stmt ->
+                    for (circleId in circleIds) {
+                        stmt.setInt(1, circleId)
+                        stmt.setInt(2, scraperId)
 
-                    stmt.execute()
+                        stmt.execute()
+                    }
                 }
             }
 
@@ -325,13 +346,15 @@ class InnerCircleDataLoad(val connectionFactory: ConnectionFactory, val jsonFile
                     stmt.execute()
                 }
             }
+
+            logger.info("Dataload complete.")
         }
     }
 }
 
-class InnerCircleDataloadModule(val jsonFile: File, val scraperEmail: String, val scraperName: String): AbstractModule() {
+class InnerCircleDataloadModule(val jsonFile: String, val scraperName: String?): AbstractModule() {
 
     @Singleton
-    @Provides
-    fun getInnerCircleEntryPoint(connectionFactory: ConnectionFactory): InnerCircleEntrypoint = InnerCircleDataLoad(connectionFactory, jsonFile, scraperEmail, scraperName)
+    @ProvidesIntoSet
+    fun getInnerCircleEntryPoint(connectionFactory: ConnectionFactory, localAssetResolver: LocalAssetResolver): InnerCircleEntrypoint = InnerCircleDataLoad(connectionFactory, localAssetResolver.resolveFile(jsonFile), scraperName)
 }

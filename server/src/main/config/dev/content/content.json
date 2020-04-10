@@ -1,0 +1,19 @@
+{
+  "posts": {
+    "internal-post-0": {
+      "date": "Jun 29, 2019",
+      "images": [],
+      "videos": [],
+      "user": "joe",
+      "text": "Hello world",
+      "comments": [],
+      "shared_with": []
+    }
+  },
+  "users": {
+    "joe": {
+      "name": "Joe Admin",
+      "email": "joe@example.com"
+    }
+  }
+}

@@ -15,7 +15,7 @@ import kotlin.collections.HashMap
 
 data class UserListUser(val id: Int, val name: String, val email: String?)
 data class InnerCircleSession(val name: String, val email: String?, val userId: Int, val generated: Long?, val expiration: Long)
-data class UserMinimal(val id: Int, val name: String, val image: String)
+data class UserMinimal(val id: Int, val name: String, val image: String?)
 data class PostComment(val text: String, val user: UserMinimal)
 data class PostImage(val id: Long, val location: String, val source: String, val thumbnail: String)
 data class PostVideo(val id: Long, val location: String, val source: String, val thumbnail: String)

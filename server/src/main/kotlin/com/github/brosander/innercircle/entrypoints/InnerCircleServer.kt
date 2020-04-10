@@ -34,9 +34,9 @@ import org.apache.velocity.runtime.RuntimeConstants
 
 data class AuthorizationException(override val message: String): Exception(message)
 
-class InnerCircleServer(private val serviceContext: ServiceContext, val services: Set<InnerCircleService>, private val traceRouting: Boolean): InnerCircleEntrypoint {
+class InnerCircleServer(private val serviceContext: ServiceContext, val services: Set<InnerCircleService>, private val port: Int?, private val traceRouting: Boolean): InnerCircleEntrypoint {
     override fun run() {
-        val server = embeddedServer(Netty, port = serviceContext.port) {
+        val server = embeddedServer(Netty, port = port ?: serviceContext.port) {
             install(CallLogging)
 
             install(AutoHeadResponse)
@@ -74,12 +74,12 @@ class InnerCircleServer(private val serviceContext: ServiceContext, val services
     }
 }
 
-class InnerCircleServerModule(val traceRouting: Boolean?) : AbstractModule() {
+class InnerCircleServerModule(val port: Int?, val traceRouting: Boolean?) : AbstractModule() {
 
     @Singleton
-    @Provides
+    @ProvidesIntoSet
     fun getInnerCircleEntrypoint(serviceContext: ServiceContext, injector: Injector): InnerCircleEntrypoint = InnerCircleServer(serviceContext, injector.getInstance(Key.get(TypeLiteral.get(Types.setOf(InnerCircleService::class.java)))) as Set<InnerCircleService>,
-            traceRouting ?: false)
+            port, traceRouting ?: false)
 
     @Singleton
     @ProvidesIntoSet

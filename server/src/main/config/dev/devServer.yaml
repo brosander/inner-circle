@@ -1,8 +1,8 @@
 ---
 description: Local server configuration for development and testing.  PLEASE DON'T use this configuration for PRODUCTION.
 environment:
-  - name: SESSION_HASH_KEY
-    description: Key to use when generating HMAC hash for session cookie.
+  - name: APP_HOME
+    description: Inner Circle base directory. (When launched from starter script this should be set automatically.)
   - name: POSTGRES_HOSTNAME
     description: Postgres hostname.
     default: localhost
@@ -25,13 +25,17 @@ arguments:
   - short: s
     long: staticAssetDir
     description: Directory to serve static assets from.
-    default: ./static
+    default: server/build/static-assets
   - short: f
     long: localFilesDir
     description: Directory to serve files (images and videos) from.
-    default: ./assets
+    default: server/src/main/config/dev/content/assets
 ---
 modules:
+  - class: com.github.brosander.innercircle.config.LocalAssetResolverModule
+    baseDir: ${env.APP_HOME}
+  - class: com.github.brosander.innercircle.entrypoints.InnerCircleDataloadModule
+    jsonFile: server/src/main/config/dev/content/content.json
   - class: com.github.brosander.innercircle.services.ServiceContextModule
     baseUrl: ${args.baseUrl}
   - class: com.github.brosander.innercircle.entrypoints.InnerCircleServerModule
@@ -42,7 +46,7 @@ modules:
   - class: com.github.brosander.innercircle.services.files.LocalFilesModule
     baseDir: ${args.localFilesDir}
   - class: com.github.brosander.innercircle.services.security.session.CookieSessionModule
-    sessionHashKey: ${env.SESSION_HASH_KEY}
+    sessionHashKey: ${func.randomHex(64)}
   - class: com.github.brosander.innercircle.model.connection.PostgresConnectionFactoryModule
     hostname: ${env.POSTGRES_HOSTNAME}
     port: ${env.POSTGRES_PORT}

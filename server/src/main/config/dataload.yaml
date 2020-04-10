@@ -1,12 +1,6 @@
 ---
 description: Dataload into Postgres.
 environment:
-  - name: DATALOAD_JSON_FILE
-    description: Json file to load.
-  - name: DATALOAD_SCRAPER_EMAIL
-    description: Email of scraper, SCRAPER_NAME user will have this email set.
-  - name: DATALOAD_SCRAPER_NAME
-    description: Name of user that did the scrape.  They will be added to all circles as they couldn't have scraped if it wasn't shared with them.
   - name: POSTGRES_HOSTNAME
     description: Postgres hostname.
     default: localhost
@@ -21,16 +15,22 @@ environment:
     default: innercircle
   - name: POSTGRES_PASSWORD
     description: Postgres password.
-arguments: []
+arguments:
+  - short: f
+    long: dataloadFile
+    description: Json file containing data to load.
+  - short: n
+    long: scraperName
+    description: Name of user that did the scrape.  They will be added to all circles as they couldn't have scraped if it wasn't shared with them.
+    required: false
 ---
 modules:
   - class: com.github.brosander.innercircle.model.connection.PostgresConnectionFactoryModule
-    hostname: ${POSTGRES_HOSTNAME}
-    port: ${POSTGRES_PORT}
-    db: ${POSTGRES_DB}
-    user: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
+    hostname: ${env.POSTGRES_HOSTNAME}
+    port: ${env.POSTGRES_PORT}
+    db: ${env.POSTGRES_DB}
+    user: ${env.POSTGRES_USER}
+    password: ${env.POSTGRES_PASSWORD}
   - class: com.github.brosander.innercircle.entrypoints.InnerCircleDataloadModule
-    jsonFile: ${DATALOAD_JSON_FILE}
-    scraperEmail: ${DATALOAD_SCRAPER_EMAIL}
-    scraperName: ${DATALOAD_SCRAPER_NAME}
+    jsonFile: ${args.dataloadFile}
+    scraperName: ${args.scraperName}

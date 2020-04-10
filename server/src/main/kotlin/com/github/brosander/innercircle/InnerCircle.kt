@@ -7,7 +7,9 @@ import com.github.brosander.innercircle.config.InnerCircleCliDefinition
 import com.github.brosander.innercircle.config.InnerCircleCliEnvironmentDefinition
 import com.github.brosander.innercircle.config.InnerCircleConfig
 import com.github.brosander.innercircle.entrypoints.InnerCircleEntrypoint
+import com.github.brosander.innercircle.services.security.AuthenticationProvider
 import com.google.inject.*
+import com.google.inject.util.Types
 import org.apache.commons.cli.DefaultParser
 import org.apache.commons.cli.Option
 import org.apache.commons.cli.Options
@@ -16,7 +18,6 @@ import org.apache.commons.text.lookup.StringLookup
 import java.io.File
 import org.apache.commons.cli.HelpFormatter
 import java.lang.RuntimeException
-import java.util.regex.Pattern
 
 fun usage(messageText: String?, description: String, options: Options, environment: List<InnerCircleCliEnvironmentDefinition>) {
     val message = if (messageText == null) "" else messageText + System.lineSeparator() + System.lineSeparator()
@@ -58,10 +59,16 @@ fun main(args: Array<String>) {
 
     cli.arguments
             .map {
-                val option = Option(it.short, it.long, it.hasArg, if (it.default == null) it.description else "${it.description} (default: ${it.default})")
-                if (it.default == null) {
-                    option.isRequired = true
+                val isRequired = it.default == null && (it.required == null || it.required)
+                val description = if (isRequired) {
+                    "${it.description} (required)"
+                } else if (it.default != null) {
+                    "${it.description} (default: ${it.default})"
+                } else {
+                    it.description
                 }
+                val option = Option(it.short, it.long, it.hasArg, description)
+                option.isRequired = isRequired
                 option
             }
             .forEach { options.addOption(it) }
@@ -100,7 +107,7 @@ fun main(args: Array<String>) {
 
     val config = try {
         objectMapper.readValue(StringSubstitutor(object : StringLookup {
-            override fun lookup(key: String?): String {
+            override fun lookup(key: String?): String? {
                 if (key == null) {
                     throw RuntimeException("Expected key, got null.")
                 }
@@ -109,8 +116,13 @@ fun main(args: Array<String>) {
 
                 return when {
                     "args" == split[0] -> cliMap[split[1]]
-                            ?: throw RuntimeException("Required argument ${split[1]} unspecified.")
+                            ?: if (options.getOption(split[0]).isRequired) {
+                                null
+                            } else {
+                                throw RuntimeException("Required argument ${split[1]} unspecified.")
+                            }
                     "env" == split[0] -> System.getProperty(split[1]) ?: System.getenv()[split[1]]
+                    "func" == split[0] -> com.github.brosander.innercircle.util.apply(split[1])
                     ?: throw RuntimeException("Environment value ${split[1]} missing from env, system properties.")
                     else -> throw RuntimeException("Malformed spec prefix ${split[0]}, expected args or env.")
                 }
@@ -123,5 +135,10 @@ fun main(args: Array<String>) {
         return
     }
 
-    Guice.createInjector(config.modules).getInstance(InnerCircleEntrypoint::class.java).run()
+    val entrypoints = Guice.createInjector(config.modules).getInstance(Key.get(TypeLiteral.get(Types.setOf(InnerCircleEntrypoint::class.java)))) as Set<InnerCircleEntrypoint>
+    entrypoints.map {
+        val t = Thread(it)
+        t.start()
+        t
+    }.forEach { it.join() }
 }
