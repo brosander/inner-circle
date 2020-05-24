@@ -32,6 +32,11 @@ task createOutput(type: Sync) {
     into 'build/dist-output'
 }
 
+task webpackDevServer(type: YarnTask) {
+    // add the express package only
+    args = ['webpack-dev-server']
+}
+
 task build {
     dependsOn('createOutput')
 }

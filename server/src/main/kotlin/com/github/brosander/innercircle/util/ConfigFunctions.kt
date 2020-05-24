@@ -7,9 +7,9 @@ val secureRandom = SecureRandom()
 
 val functions: Map<String, (List<String>) -> String> = mapOf(
         "randomHex" to { args ->
-            val bytes = ByteArray(Integer.parseInt(args[0]))
-            secureRandom.nextBytes(bytes)
-            hex(bytes)
+            hex(ByteArray(Integer.parseInt(args[0])).apply {
+                secureRandom.nextBytes(this)
+            })
         }
 )
 

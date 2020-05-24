@@ -246,7 +246,11 @@ class DataStore @Inject @Singleton constructor(private val resolver: FileResolve
                                 id,
                                 it.getString(i++),
                                 it.getDate(i++),
-                                UserMinimal(it.getInt(i++), it.getString(i++), resolver.resolve(it.getString(i))),
+                                UserMinimal(
+                                        id = it.getInt(i++),
+                                        name = it.getString(i++),
+                                        image = it.getString(i)?.let { image -> resolver.resolve(image) }
+                                ),
                                 comments,
                                 images,
                                 videos
